@@ -1,5 +1,6 @@
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
 import type { TokenizedLine, HighlightSpec, TokenInfo } from './types.js';
+import { THEMES, type Theme } from './themes.js';
 import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -31,27 +32,6 @@ const HEADER_HEIGHT = 36;
 const GUTTER_PADDING = 12;
 const GUTTER_SEPARATOR_WIDTH = 1;
 const WRAP_INDENT_CHARS = 4;
-const BG_COLOR = '#282c34';
-const HEADER_BG = '#21252b';
-const HEADER_BORDER = '#181a1f';
-const LINE_NUM_COLOR = '#636d83';
-const HEADER_TEXT_COLOR = '#9da5b4';
-const GUTTER_SEP_COLOR = '#3b4048';
-const WRAP_INDICATOR_COLOR = '#4b5263';
-const FOLD_BG = '#2c313a';
-const FOLD_TEXT_COLOR = '#5c6370';
-const FOLD_BORDER_COLOR = '#3b4048';
-
-const HIGHLIGHT_COLORS = {
-  red: {
-    bg: 'rgba(255, 60, 60, 0.12)',
-    border: '#ff4444',
-  },
-  green: {
-    bg: 'rgba(60, 255, 60, 0.12)',
-    border: '#44ff44',
-  },
-};
 
 interface RenderInput {
   tokenizedLines: TokenizedLine[];
@@ -61,6 +41,9 @@ interface RenderInput {
   highlights: HighlightSpec[];
   maxWidth?: number;
   folds?: { start: number; end: number }[];
+  theme?: Theme;
+  /** Max rendered rows allowed; `null`/undefined disables the check. */
+  maxLines?: number | null;
 }
 
 // A visual row produced by wrapping a source line
@@ -154,6 +137,20 @@ export async function renderCode(input: RenderInput): Promise<Buffer> {
   const { tokenizedLines, startLine, endLine, relativePath, highlights, maxWidth, folds } = input;
   const visibleLines = tokenizedLines.slice(startLine - 1, endLine);
 
+  // Theme colors (defaults to the dark theme).
+  const theme = input.theme ?? THEMES.dark;
+  const BG_COLOR = theme.bg;
+  const HEADER_BG = theme.headerBg;
+  const HEADER_BORDER = theme.headerBorder;
+  const LINE_NUM_COLOR = theme.lineNumColor;
+  const HEADER_TEXT_COLOR = theme.headerTextColor;
+  const GUTTER_SEP_COLOR = theme.gutterSepColor;
+  const WRAP_INDICATOR_COLOR = theme.wrapIndicatorColor;
+  const FOLD_BG = theme.foldBg;
+  const FOLD_TEXT_COLOR = theme.foldTextColor;
+  const FOLD_BORDER_COLOR = theme.foldBorderColor;
+  const HIGHLIGHT_COLORS = theme.highlight;
+
   // Build a set of folded line numbers for fast lookup
   const foldedLines = new Set<number>();
   const foldStarts = new Map<number, number>(); // foldStartLine → count of folded lines
@@ -234,6 +231,17 @@ export async function renderCode(input: RenderInput): Promise<Buffer> {
         charEnd: totalChars,
       });
     }
+  }
+
+  // Enforce the max rendered-rows limit (folds already collapsed to one row,
+  // wrapped lines already counted as separate rows). Keeps the image short
+  // enough to fit on a single page.
+  const maxLines = input.maxLines;
+  if (maxLines != null && visualRows.length > maxLines) {
+    throw new Error(
+      `Screenshot would be ${visualRows.length} lines, over the ${maxLines}-line limit.\n` +
+      `  Narrow --lines, collapse sections with --fold, or pass --no-max-lines to allow it.`
+    );
   }
 
   // Calculate total width

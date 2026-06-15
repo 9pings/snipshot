@@ -15,23 +15,32 @@ snipshot <file> --lines <start>-<end> [options]
 
 ## Options
 
-- `--highlight-red <spec>` — outline in red. Repeatable.
-- `--highlight-green <spec>` — outline in green. Repeatable.
-- `--max-width <pixels>` — cap image width, wraps long lines. Use 700-800 for reports.
+- `--highlight-red <specs>` — outline in red. Accepts a comma-separated list and/or repeat the flag.
+- `--highlight-green <specs>` — outline in green. Accepts a comma-separated list and/or repeat the flag.
+- `--fold <ranges>` — collapse line ranges into a single `••• N lines folded •••` indicator. Comma-separated list and/or repeatable. Use this to hide imports, boilerplate, or unrelated sections while keeping the lines you care about visible.
+- `--context <n>` — lines of context shown before/after `--lines`, clamped to the file. Default: `3`.
+- `--no-context` — show exactly the requested lines (same as `--context 0`).
+- `--max-lines <n>` — error if the result exceeds this many rendered rows, so the image fits on one page. Default: `70`. Folds count as 1 row; wrapped lines count each row.
+- `--no-max-lines` — disable the rendered-rows limit.
+- `--theme <name>` — color theme: `dark` (default, One Dark Pro) or `light` (One Light).
+- `--max-width <pixels>` — cap image width with word wrap. Default: `800` (≈ a page width, so it fits a document). Increase for wider code.
+- `--no-max-width` — disable word wrap; the image grows as wide as the longest line.
 - `--output <path>` — output PNG path. Default: `<filename>_L<start>-<end>.png` in cwd.
-- `--root <path>` — project root for the relative path shown in the header. Default: auto-detected via `.git`.
+- `--root <path>` — project root for the relative path shown in the header. Default: the nearest `.git` directory above the file; if none is found, the current working directory.
 
-## Highlight spec format
+## Highlight / fold spec format
 
-A highlight spec targets lines or character ranges:
+Each `--highlight-*` and `--fold` flag takes one or more comma-separated targets (and the flag can also be repeated):
 
 - `47` — entire line 47
 - `47-50` — lines 47 through 50
-- `47:12-38` — line 47, columns 12 to 38 (1-based, inclusive)
+- `47:12-38` — line 47, columns 12 to 38 (highlights only — draws a box around those characters)
 
-Multiple highlights can be combined by repeating the flag:
+All numbers are 1-based and inclusive. Combine several in one flag with commas:
 
 ```bash
+# These two are equivalent:
+snipshot file.java --lines 40-60 --highlight-red 45,50:10-30 --highlight-green 55
 snipshot file.java --lines 40-60 --highlight-red 45 --highlight-red 50:10-30 --highlight-green 55
 ```
 
@@ -62,18 +71,40 @@ snipshot src/config.ts --lines 10-15 --highlight-red 12:25-60
 snipshot src/controller.java --lines 1-30 --max-width 700
 ```
 
+**Fold noisy sections (imports, boilerplate) while keeping key code visible:**
+```bash
+snipshot src/service.ts --lines 1-120 --fold 1-25 --fold 80-100 --highlight-red 55
+```
+
 **Custom output path:**
 ```bash
 snipshot src/app.tsx --lines 50-80 --output docs/images/app-snippet.png
+```
+
+**Light theme:**
+```bash
+snipshot src/app.tsx --lines 50-80 --theme light
+```
+
+**Large extract that won't fit a page — fold the noise or lift the limit:**
+```bash
+snipshot src/service.ts --lines 1-200 --fold 1-30,120-180   # collapse to fit
+snipshot src/service.ts --lines 1-200 --no-max-lines        # allow a tall image
 ```
 
 ## Behavior notes
 
 - The full file is read and tokenized (not just the selected lines) so syntax highlighting is always accurate, even for mid-file extracts.
 - Line numbers in the output match the original file.
+- By default 3 lines of context are rendered before and after `--lines` (clamped to the file). Disable with `--no-context` or change with `--context <n>`. Context does not affect the output filename.
+- The command **errors** if the result would exceed 70 rendered rows, so screenshots fit on a single page. Folded ranges count as 1 row; wrapped lines count each row. Raise with `--max-lines <n>` or remove with `--no-max-lines`. To recover, narrow `--lines`, add `--fold`, or pass `--no-max-lines`.
 - Tabs are expanded to 4 spaces.
-- When `--max-width` is set, long lines wrap with a `↳` continuation indicator. Line numbers are only shown on the first visual row.
+- Long lines word-wrap at `--max-width` (default `800px` ≈ a page) with a `↳` continuation indicator; line numbers are only shown on the first visual row. Pass `--no-max-width` for a single wide line per source line.
 - Full-line highlights (`--highlight-red 47`) show a tinted background with a colored left border.
 - Column highlights (`--highlight-red 47:12-38`) draw a colored rectangle around the specified characters. They work correctly across wrapped lines.
+- `--fold` ranges are clipped to the `--lines` window, so you can safely fold beyond the captured range. Folded lines render as a single `••• N lines folded •••` row with a dotted gutter marker. Highlights that fall inside a folded range are hidden.
+- Language is auto-detected from 150+ file extensions (and common filenames like `Dockerfile`, `Makefile`). Unknown or unsupported types fall back to plaintext rendering — the screenshot still succeeds, just without syntax colors.
 - Output is always PNG (not JPG).
-- The header displays the file path relative to the project root.
+- The header displays the file path relative to the project root (see `--root`). Without a `.git` ancestor and without `--root`, the root is the current working directory, so a file outside it shows a `../`-prefixed path — run from the right directory or pass `--root` to control this.
+- The `--theme` flag switches both the syntax colors and the editor chrome (background, gutter, header). Default is `dark`.
+- Running `snipshot` with no arguments prints the help text (exit 0) instead of an error.

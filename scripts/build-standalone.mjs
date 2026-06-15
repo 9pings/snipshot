@@ -67,9 +67,13 @@ if (requestedArg) {
 try { execFileSync('bun', ['--version'], { stdio: 'pipe' }); }
 catch { console.error('Bun required: curl -fsSL https://bun.sh/install | bash'); process.exit(1); }
 
-// Clean
-if (existsSync(distDir)) rmSync(distDir, { recursive: true });
+// Clean — only the selected platforms' output dirs, so partial builds
+// don't wipe binaries for platforms we're not rebuilding.
 mkdirSync(distDir, { recursive: true });
+for (const [name] of selectedPlatforms) {
+  const platformDir = join(distDir, name);
+  if (existsSync(platformDir)) rmSync(platformDir, { recursive: true });
+}
 
 // Download native packages
 console.log('Downloading native addons...');
@@ -138,8 +142,11 @@ for (const [name, cfg] of selectedPlatforms) {
   const jsBindingBackup = readFileSync(jsBindingPath);
   writeFileSync(jsBindingPath, `module.exports = require(process.env.NAPI_RS_NATIVE_LIBRARY_PATH);\n`);
 
-  // Bun compile — NO --external, so canvas JS wrappers are bundled
-  const outFile = join(distDir, cfg.binaryName);
+  // Bun compile — NO --external, so canvas JS wrappers are bundled.
+  // Each platform gets its own folder: standalone/<os>/snipshot(.exe)
+  const outDir = join(distDir, name);
+  mkdirSync(outDir, { recursive: true });
+  const outFile = join(outDir, cfg.binaryName);
   try {
     execFileSync('bun', [
       'build', '--compile',
@@ -158,7 +165,7 @@ for (const [name, cfg] of selectedPlatforms) {
   writeFileSync(jsBindingPath, jsBindingBackup);
 
   const binSize = (statSync(outFile).size / 1024 / 1024).toFixed(0);
-  console.log(`  ${cfg.binaryName} — ${binSize} MB (single file)`);
+  console.log(`  standalone/${name}/${cfg.binaryName} — ${binSize} MB (single file)`);
 }
 
 // Cleanup
@@ -168,11 +175,11 @@ if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true });
 // Summary
 console.log('\n' + '='.repeat(50));
 console.log('Build complete!\n');
-for (const [, cfg] of selectedPlatforms) {
-  const outFile = join(distDir, cfg.binaryName);
+for (const [name, cfg] of selectedPlatforms) {
+  const outFile = join(distDir, name, cfg.binaryName);
   if (existsSync(outFile)) {
     const size = (statSync(outFile).size / 1024 / 1024).toFixed(0);
-    console.log(`  ${cfg.binaryName}  (${size} MB) — single file, fully standalone`);
+    console.log(`  standalone/${name}/${cfg.binaryName}  (${size} MB) — single file, fully standalone`);
   }
 }
 console.log('\nFirst run extracts native engine to ~/.snipshot/ (cached).');

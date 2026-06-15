@@ -26,4 +26,13 @@ export interface CodeShotOptions {
   rootPath?: string;
   maxWidth?: number;
   folds?: LineRange[];
+  theme?: string;
+  /** Extra lines rendered before/after the captured range (clamped to file bounds). Default 3. */
+  contextLines?: number;
+  /**
+   * Max number of rendered rows allowed (folds collapse to one row, wrapped
+   * lines count each row). Throws if exceeded. `null` disables the limit.
+   * Default 70.
+   */
+  maxLines?: number | null;
 }

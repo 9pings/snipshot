@@ -1,21 +1,23 @@
 import { createHighlighter, bundledLanguages, type Highlighter } from 'shiki';
 import type { TokenizedLine } from './types.js';
+import { THEMES, type Theme } from './themes.js';
 
 let highlighterInstance: Highlighter | null = null;
 
-const DEFAULT_COLOR = '#abb2bf';
-const THEME = 'one-dark-pro';
-
-async function getHighlighter(lang: string): Promise<Highlighter> {
+async function getHighlighter(lang: string, theme: string): Promise<Highlighter> {
   if (!highlighterInstance) {
     highlighterInstance = await createHighlighter({
-      themes: [THEME],
+      themes: [theme],
       langs: [lang as any],
     });
   } else {
-    const loaded = highlighterInstance.getLoadedLanguages();
-    if (!loaded.includes(lang)) {
+    const loadedLangs = highlighterInstance.getLoadedLanguages();
+    if (!loadedLangs.includes(lang)) {
       await highlighterInstance.loadLanguage(lang as any);
+    }
+    const loadedThemes = highlighterInstance.getLoadedThemes();
+    if (!loadedThemes.includes(theme)) {
+      await highlighterInstance.loadTheme(theme as any);
     }
   }
   return highlighterInstance;
@@ -26,32 +28,36 @@ function isLanguageSupported(lang: string): boolean {
 }
 
 // Fallback: split code into lines of plain tokens (no syntax coloring)
-function plainTokenize(code: string): TokenizedLine[] {
-  return code.split('\n').map(line => [{ text: line, color: DEFAULT_COLOR }]);
+function plainTokenize(code: string, defaultColor: string): TokenizedLine[] {
+  return code.split('\n').map(line => [{ text: line, color: defaultColor }]);
 }
 
-export async function tokenizeCode(code: string, lang: string): Promise<TokenizedLine[]> {
+export async function tokenizeCode(
+  code: string,
+  lang: string,
+  theme: Theme = THEMES.dark,
+): Promise<TokenizedLine[]> {
   // If the language is not supported by Shiki, fall back to plain text
   if (!isLanguageSupported(lang)) {
-    return plainTokenize(code);
+    return plainTokenize(code, theme.defaultColor);
   }
 
   try {
-    const highlighter = await getHighlighter(lang);
+    const highlighter = await getHighlighter(lang, theme.shikiTheme);
 
     const result = highlighter.codeToTokensBase(code, {
       lang: lang as any,
-      theme: THEME,
+      theme: theme.shikiTheme as any,
     });
 
     return result.map(line =>
       line.map(token => ({
         text: token.content,
-        color: token.color || DEFAULT_COLOR,
+        color: token.color || theme.defaultColor,
       }))
     );
   } catch {
     // If tokenization fails for any reason, fall back to plain text
-    return plainTokenize(code);
+    return plainTokenize(code, theme.defaultColor);
   }
 }
